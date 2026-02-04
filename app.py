@@ -10,6 +10,7 @@ from components.intro import display_intro
 from components.chatbot import display_chat_enhanced, initialize_client
 from components.url_validation import is_valid_youtube_url
 from components.quiz_display import display_quiz_generator
+from components.mindmap_display import display_mindmap_generator
 from utils.summarization import get_summary
 from components.sidebar import render_sidebar
 from styles.styles import get_titleCenter_css
@@ -38,7 +39,8 @@ def init_session_state():
         "quiz_answers": {},
         "quiz_submitted": False,
         "chat_messages": [],
-        "active_tab": 0
+        "active_tab": 0,
+        "mindmap_markdown": None
     }
     
     for key, value in defaults.items():
@@ -304,10 +306,11 @@ if st.session_state.accepted_terms:
             st.write("")
             
             # ===== TABS INTERFACE =====
-            tab1, tab2, tab3 = st.tabs([
+            tab1, tab2, tab3, tab4 = st.tabs([
                 "📝 Tóm Tắt",
                 "💬 Trò Chuyện",
-                "📚 Quiz Học Tập"
+                "📚 Quiz Học Tập",
+                "🧠 Mind Map"
             ])
             
             with tab1:
@@ -318,6 +321,9 @@ if st.session_state.accepted_terms:
             
             with tab3:
                 display_quiz_generator(client)
+            
+            with tab4:
+                display_mindmap_generator(client)
 
         else:
             # Display intro when no video
