@@ -11,7 +11,7 @@ from components.chatbot import display_chat_enhanced, initialize_client
 from components.url_validation import is_valid_youtube_url
 from components.quiz_display import display_quiz_generator
 from components.mindmap_display import display_mindmap_generator
-from utils.summarization import get_summary
+from utils.summarization import get_summary, SUMMARY_LEVELS, get_level_info
 from components.sidebar import render_sidebar
 from styles.styles import get_titleCenter_css
 
@@ -40,7 +40,8 @@ def init_session_state():
         "quiz_submitted": False,
         "chat_messages": [],
         "active_tab": 0,
-        "mindmap_markdown": None
+        "mindmap_markdown": None,
+        "summary_level": "standard"
     }
     
     for key, value in defaults.items():
@@ -156,11 +157,46 @@ def extract_transcript_details(video_url, lang="en"):
 
 
 def display_summary_tab(client, youtube_link, selected_language):
-    """Hiển thị tab Tóm tắt."""
+    """Hiển thị tab Tóm tắt với 3 mức độ chi tiết."""
     
     if not youtube_link:
         st.info("👆 Vui lòng nhập URL video YouTube ở trên để bắt đầu.")
         return
+    
+    # ===== CHỌN MỨC ĐỘ TÓM TẮT =====
+    st.markdown("##### 📊 Chọn mức độ chi tiết:")
+    
+    level_cols = st.columns(3)
+    
+    levels = ["quick", "standard", "detailed"]
+    level_icons = ["⚡", "📝", "📚"]
+    level_names = ["Tóm tắt nhanh", "Tóm tắt chuẩn", "Tóm tắt chi tiết"]
+    level_descriptions = [
+        "~200 từ • 5-7 điểm chính",
+        "~500 từ • 10-15 điểm", 
+        "~1500 từ • 20+ điểm"
+    ]
+    
+    for i, (col, level, icon, name, desc) in enumerate(zip(level_cols, levels, level_icons, level_names, level_descriptions)):
+        with col:
+            is_selected = st.session_state.get("summary_level", "standard") == level
+            button_type = "primary" if is_selected else "secondary"
+            
+            if st.button(
+                f"{icon} {name}\n{desc}",
+                key=f"level_{level}",
+                use_container_width=True,
+                type=button_type
+            ):
+                st.session_state.summary_level = level
+                st.rerun()
+    
+    # Hiển thị mức độ đã chọn
+    current_level = st.session_state.get("summary_level", "standard")
+    level_info = get_level_info(current_level)
+    st.caption(f"✅ Đã chọn: **{level_info['name']}** - {level_info['description']}")
+    
+    st.divider()
     
     # Button to fetch detailed notes
     if st.button("📓 Tạo Bản Tóm Tắt", type="primary", use_container_width=True):
@@ -170,46 +206,49 @@ def display_summary_tab(client, youtube_link, selected_language):
         current_time = time.time()
         cache_expiry = 3600  # 1 hour expiration
 
-        # Check if we need to regenerate (new video or expired cache)
+        # Check if we need to regenerate
+        current_level = st.session_state.get("summary_level", "standard")
+        cache_key = f"{youtube_link}_{current_level}"
+        
         need_regenerate = (
             'cached_summary' not in st.session_state or 
             st.session_state.cached_summary is None or
             st.session_state.cached_summary_timestamp is None or 
             current_time - st.session_state.cached_summary_timestamp > cache_expiry or
-            st.session_state.current_video_url != youtube_link
+            st.session_state.current_video_url != youtube_link or
+            st.session_state.get("cached_level") != current_level
         )
 
         if need_regenerate:
             with st.spinner("🔄 Đang trích xuất phụ đề..."):
-                # Extract transcript details for the video
                 transcript_text = extract_transcript_details(youtube_link, selected_language)
 
             if transcript_text:
-                with st.spinner("🤖 Đang tạo bản tóm tắt với AI..."):
-                    # Generate a summary using the transcript
+                level_info = get_level_info(current_level)
+                with st.spinner(f"🤖 Đang tạo {level_info['name']}..."):
                     video_id = youtube_link.split("=")[1] if "=" in youtube_link else youtube_link.split("/")[-1]
-                    summary = get_summary(client, transcript_text, LANGUAGES[selected_language], video_id)
+                    summary = get_summary(client, transcript_text, LANGUAGES[selected_language], video_id, current_level)
                     
                     if summary is not None:
-                        # Cache the generated summary
                         st.session_state.cached_summary = summary
                         st.session_state.cached_summary_timestamp = current_time
                         st.session_state.follow_up_summary = summary
                         st.session_state.current_video_url = youtube_link
+                        st.session_state.cached_level = current_level
                         
-                        # Reset quiz khi có video mới
+                        # Reset quiz và mindmap khi có video mới
                         st.session_state.quiz_data = None
                         st.session_state.quiz_answers = {}
                         st.session_state.quiz_submitted = False
                         st.session_state.chat_messages = []
+                        st.session_state.mindmap_markdown = None
                         
-                        st.success("✅ Đã tạo bản tóm tắt thành công!")
+                        st.success(f"✅ Đã tạo {level_info['name']} thành công!")
                     else:
                         st.error("❌ Không thể tạo bản tóm tắt.")
             else:
                 st.error("❌ Không tìm thấy phụ đề cho video này.")
         else:
-            # Use cached summary
             st.session_state.follow_up_summary = st.session_state.cached_summary
             st.info("📦 Sử dụng bản tóm tắt từ cache.")
     
